@@ -29,24 +29,30 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __NetBSD__
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.9 2020/05/09 16:18:57 maxv Exp $");
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/cpu.h>
 
-#include <uvm/uvm.h>
-#include <uvm/uvm_page.h>
-
+#ifdef __NetBSD__
 #include <x86/cputypes.h>
 #include <x86/specialreg.h>
 #include <x86/pmap.h>
+#endif
 
-#include <dev/nvmm/nvmm.h>
-#include <dev/nvmm/nvmm_internal.h>
-#include <dev/nvmm/x86/nvmm_x86.h>
+#ifdef __DragonFly__
+#include <machine/specialreg.h>
+#include <machine/segments.h>
+#endif
+
+#include <dev/virtual/nvmm/nvmm_compat.h>
+#include <dev/virtual/nvmm/nvmm.h>
+#include <dev/virtual/nvmm/nvmm_internal.h>
+#include <dev/virtual/nvmm/x86/nvmm_x86.h>
 
 /*
  * Code shared between x86-SVM and x86-VMX.

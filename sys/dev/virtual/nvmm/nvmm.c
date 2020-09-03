@@ -29,16 +29,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __NetBSD__
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.33 2020/08/01 08:18:36 maxv Exp $");
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 
-#include <sys/cpu.h>
 #include <sys/conf.h>
-#include <sys/kmem.h>
 #include <sys/module.h>
 #include <sys/proc.h>
 #include <sys/mman.h>
@@ -46,14 +46,14 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.33 2020/08/01 08:18:36 maxv Exp $");
 #include <sys/filedesc.h>
 #include <sys/device.h>
 
-#include <uvm/uvm.h>
-#include <uvm/uvm_page.h>
+#include <dev/virtual/nvmm/nvmm_compat.h>
+#include <dev/virtual/nvmm/nvmm.h>
+#include <dev/virtual/nvmm/nvmm_internal.h>
+#include <dev/virtual/nvmm/nvmm_ioctl.h>
 
+#ifdef __NetBSD__
 #include "ioconf.h"
-
-#include <dev/nvmm/nvmm.h>
-#include <dev/nvmm/nvmm_internal.h>
-#include <dev/nvmm/nvmm_ioctl.h>
+#endif
 
 static struct nvmm_machine machines[NVMM_MAX_MACHINES];
 static volatile unsigned int nmachines __cacheline_aligned;
@@ -1018,6 +1018,7 @@ nvmm_fini(void)
 
 /* -------------------------------------------------------------------------- */
 
+#ifdef __NetBSD__
 static dev_type_open(nvmm_open);
 
 const struct cdevsw nvmm_cdevsw = {
@@ -1034,12 +1035,14 @@ const struct cdevsw nvmm_cdevsw = {
 	.d_discard = nodiscard,
 	.d_flag = D_OTHER | D_MPSAFE
 };
+#endif /* __NetBSD__ */
 
 static int nvmm_ioctl(file_t *, u_long, void *);
 static int nvmm_close(file_t *);
 static int nvmm_mmap(file_t *, off_t *, size_t, int, int *, int *,
     struct uvm_object **, int *);
 
+#ifdef __NetBSD__
 const struct fileops nvmm_fileops = {
 	.fo_read = fbadop_read,
 	.fo_write = fbadop_write,
@@ -1079,6 +1082,7 @@ nvmm_open(dev_t dev, int flags, int type, struct lwp *l)
 
 	return fd_clone(fp, fd, flags, &nvmm_fileops, owner);
 }
+#endif /* __NetBSD__ */
 
 static int
 nvmm_close(file_t *fp)
@@ -1122,8 +1126,10 @@ nvmm_mmap(file_t *fp, off_t *offp, size_t size, int prot, int *flagsp,
 	uao_reference(mach->commuobj);
 	*uobjp = mach->commuobj;
 	*offp = cpuid * PAGE_SIZE;
+#ifdef __NetBSD__
 	*maxprotp = prot;
 	*advicep = UVM_ADV_RANDOM;
+#endif
 
 	nvmm_machine_put(mach);
 	return 0;
@@ -1174,8 +1180,123 @@ nvmm_ioctl(file_t *fp, u_long cmd, void *data)
 	}
 }
 
+#ifdef __DragonFly__
+#include <sys/devfs.h>
+
+MALLOC_DEFINE(M_NVMM, "NVMM-related data", "NVMM-related data");
+DEVFS_DEFINE_CLONE_BITMAP(nvmm);
+
+static  int
+nvmm_open_devop(struct dev_open_args *ap)
+{
+	cdev_t dev = ap->a_head.a_dev;
+	int flags = ap->a_oflags;
+	struct file *fp = ap->a_fp;
+	struct nvmm_owner *owner;
+
+	if (__predict_false(nvmm_impl == NULL))
+		return ENXIO;
+
+	if (minor(dev) == 0)
+		return EXDEV;
+	if (!(flags & O_CLOEXEC))
+		return EINVAL;
+
+	if (OFLAGS(flags) & O_WRONLY) {
+		owner = &root_owner;
+	} else {
+		owner = kmem_alloc(sizeof(*owner), KM_SLEEP);
+		owner->pid = curthread->td_proc->p_pid;
+	}
+
+	/* Nothing else to do, already working with cloned device */
+	fp->f_data = owner;
+
+	return 0;
+}
+
+static int
+nvmm_ioctl_devop(struct dev_ioctl_args *ap)
+{
+	return nvmm_ioctl(ap->a_fp, ap->a_cmd, ap->a_data);
+}
+
+static int
+nvmm_close_devop(struct dev_close_args *ap)
+{
+	int uminor_no = minor(ap->a_head.a_dev);
+	int error = 0;
+
+	error = nvmm_close(ap->a_fp);
+	if (error == 0) {
+		devfs_clone_bitmap_put(&DEVFS_CLONE_BITMAP(nvmm),
+			uminor_no);
+	}
+
+	return error;
+}
+
+static int
+nvmm_mmap_devop(struct dev_mmap_args *ap)
+{
+	return ENODEV;
+}
+
+static int
+nvmm_mmap_single_devop(struct dev_mmap_single_args *ap)
+{
+	return nvmm_mmap(ap->a_fp, ap->a_offset, ap->a_size, ap->a_nprot,
+	    NULL, NULL, ap->a_object, NULL);
+}
+
+static struct dev_ops nvmm_ops = {
+	{ "nvmm", 0, D_MPSAFE },
+	.d_open = nvmm_open_devop,
+	.d_ioctl = nvmm_ioctl_devop,
+	.d_close = nvmm_close_devop,
+	.d_mmap = nvmm_mmap_devop,
+	.d_mmap_single = nvmm_mmap_single_devop,
+};
+
+static int
+nvmm_clone(struct dev_clone_args *ap)
+{
+	int unit;
+
+	unit = devfs_clone_bitmap_get(&DEVFS_CLONE_BITMAP(nvmm),
+	    NVMM_MAX_MACHINES);
+	if (unit < 0) {
+		ap->a_dev = NULL;
+		return 1;
+	}
+
+	/*
+	 * The cloning bitmap should guarantee isolation during
+	 * initialization. No need to create a devfs node.
+	 */
+	ap->a_dev = make_only_dev(&nvmm_ops, unit,
+				  ap->a_cred->cr_ruid,
+				  0, 0600, "nvmm%d", unit);
+
+	return 0;
+}
+
+static void
+nvmm_init_wrap(void)
+{
+	make_autoclone_dev(&nvmm_ops, &DEVFS_CLONE_BITMAP(nvmm), nvmm_clone,
+			   0, 0, 0666, "nvmm");
+	(void)nvmm_init();
+}
+
+SYSINIT(nvmmdev, SI_SUB_DRIVERS, SI_ORDER_LATER, nvmm_init_wrap, NULL);
+SYSUNINIT(nvmmdev, SI_SUB_DRIVERS, SI_ORDER_LATER, nvmm_fini, NULL);
+
+#endif /* __DragonFly__ */
+
 /* -------------------------------------------------------------------------- */
 
+#ifdef __NetBSD__
 static int nvmm_match(device_t, cfdata_t, void *);
 static void nvmm_attach(device_t, device_t, void *);
 static int nvmm_detach(device_t, int);
@@ -1313,3 +1434,4 @@ nvmm_modcmd(modcmd_t cmd, void *arg)
 		return ENOTTY;
 	}
 }
+#endif /* __NetBSD__ */

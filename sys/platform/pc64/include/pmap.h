@@ -336,6 +336,22 @@ struct pmap {
 	uint64_t (*swapu64)(volatile uint64_t *, uint64_t v);
 	uint32_t (*fuwordadd32)(volatile uint32_t *, uint32_t v);
 	uint64_t (*fuwordadd64)(volatile uint64_t *, uint64_t v);
+
+	/* Used by NVMM */
+	int (*pm_enter)(struct pmap *, vm_offset_t, vm_paddr_t,
+	    u_char /* vm_prot_t */, u_int);
+	bool (*pm_extract)(struct pmap *, vm_offset_t, vm_paddr_t *);
+	void (*pm_remove)(struct pmap *, vm_offset_t, vm_offset_t);
+	int (*pm_sync_pv)(struct vm_page *, vm_offset_t, vm_paddr_t, int,
+	    uint8_t *, pt_entry_t *);
+	void (*pm_pp_remove_ent)(struct pmap *, struct vm_page *, pt_entry_t,
+	    vm_offset_t);
+	void (*pm_write_protect)(struct pmap *, vm_offset_t, vm_offset_t,
+	    u_char /* vm_prot_t */);
+	void (*pm_unwire)(struct pmap *, vm_offset_t);
+
+	void (*pm_tlb_flush)(struct pmap *);
+	void *pm_data;
 };
 
 #define PMAP_FLAG_SIMPLE	0x00000001

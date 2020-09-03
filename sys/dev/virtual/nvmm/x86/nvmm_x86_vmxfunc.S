@@ -29,6 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __NetBSD__
 /* Override user-land alignment before including asm.h */
 #define	ALIGN_DATA	.align	8
 #define ALIGN_TEXT	.align 16,0x90
@@ -39,9 +40,18 @@
 #include <machine/asm.h>
 #include <machine/segments.h>
 #include <x86/specialreg.h>
+#endif /* __NetBSD__ */
+
+#ifdef __DragonFly__
+#include "assym.s"
+#include <machine/asmacros.h>
+
+#define _C_LABEL(x)	x
+
+#endif /* __DragonFly__ */
 
 #define ASM_NVMM
-#include <dev/nvmm/x86/nvmm_x86.h>
+#include <dev/virtual/nvmm/x86/nvmm_x86.h>
 
 	.text
 

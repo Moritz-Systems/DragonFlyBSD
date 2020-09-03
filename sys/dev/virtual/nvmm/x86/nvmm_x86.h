@@ -217,7 +217,13 @@ struct nvmm_cap_md {
 #ifndef ASM_NVMM
 
 #include <sys/types.h>
+
+#ifdef __NetBSD__
 #include <x86/cpu_extended_state.h>
+#endif
+#ifdef __DragonFly__
+#include <machine/npx.h>
+#endif
 
 struct nvmm_x64_state_seg {
 	uint16_t selector;

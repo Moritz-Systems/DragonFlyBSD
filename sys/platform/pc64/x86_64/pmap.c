@@ -337,6 +337,8 @@ static long vm_pmap_pv_entries;
 SYSCTL_LONG(_vm, OID_AUTO, pmap_pv_entries, CTLFLAG_RD,
     &vm_pmap_pv_entries, 0, "");
 
+__read_mostly bool pmap_ept_has_ad;
+
 /* Standard user access funtions */
 extern int std_copyinstr (const void *udaddr, void *kaddr, size_t len,
     size_t *lencopied);

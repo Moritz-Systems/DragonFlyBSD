@@ -29,17 +29,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __NetBSD__
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.65 2020/07/19 06:56:09 maxv Exp $");
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
+#include <sys/mman.h>
+#include <sys/bitops.h>
+
+#ifdef __NetBSD__
 #include <sys/kmem.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
-#include <sys/mman.h>
-#include <sys/bitops.h>
 
 #include <uvm/uvm.h>
 #include <uvm/uvm_page.h>
@@ -50,10 +54,12 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.65 2020/07/19 06:56:09 maxv Exp $
 #include <x86/dbregs.h>
 #include <x86/cpu_counter.h>
 #include <machine/cpuvar.h>
+#endif /* __NetBSD__ */
 
-#include <dev/nvmm/nvmm.h>
-#include <dev/nvmm/nvmm_internal.h>
-#include <dev/nvmm/x86/nvmm_x86.h>
+#include <dev/virtual/nvmm/nvmm_compat.h>
+#include <dev/virtual/nvmm/nvmm.h>
+#include <dev/virtual/nvmm/nvmm_internal.h>
+#include <dev/virtual/nvmm/x86/nvmm_x86.h>
 
 int _vmx_vmxon(paddr_t *pa);
 int _vmx_vmxoff(void);
@@ -1934,7 +1940,7 @@ vmx_vcpu_guest_misc_enter(struct nvmm_cpu *vcpu)
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 
 	/* This gets restored automatically by the CPU. */
-	vmx_vmwrite(VMCS_HOST_IDTR_BASE, (uint64_t)curcpu()->ci_idtvec.iv_idt);
+	vmx_vmwrite(VMCS_HOST_IDTR_BASE, x86_idt_iv());
 	vmx_vmwrite(VMCS_HOST_FS_BASE, rdmsr(MSR_FSBASE));
 	vmx_vmwrite(VMCS_HOST_CR3, rcr3());
 	vmx_vmwrite(VMCS_HOST_CR4, rcr4());
@@ -2705,13 +2711,14 @@ vmx_asid_free(struct nvmm_cpu *vcpu)
 	mutex_exit(&vmx_asidlock);
 }
 
+extern uint8_t vmx_resume_rip;
+
 static void
 vmx_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 	struct vmcs *vmcs = cpudata->vmcs;
 	struct msr_entry *gmsr = cpudata->gmsr;
-	extern uint8_t vmx_resume_rip;
 	uint64_t rev, eptp;
 
 	rev = vmx_get_revision();
@@ -3123,7 +3130,7 @@ vmx_ident(void)
 	uint64_t msr;
 	int ret;
 
-	if (!(cpu_feature[1] & CPUID2_VMX)) {
+	if (!(x86_cpuid2_value() & CPUID2_VMX)) {
 		return false;
 	}
 

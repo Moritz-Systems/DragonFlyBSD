@@ -127,12 +127,17 @@ extern const struct nvmm_impl nvmm_x86_vmx;
 static inline bool
 nvmm_return_needed(void)
 {
+#ifdef __NetBSD__
 	if (preempt_needed()) {
 		return true;
 	}
 	if (curlwp->l_flag & LW_USERRET) {
 		return true;
 	}
+#endif /* __NetBSD__ */
+#ifdef __DragonFly__
+	/* XXX */
+#endif
 	return false;
 }
 

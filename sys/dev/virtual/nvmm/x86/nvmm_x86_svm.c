@@ -29,16 +29,20 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __NetBSD__
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.65 2020/07/19 06:56:09 maxv Exp $");
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
+#include <sys/mman.h>
+
+#ifdef __NetBSD__
 #include <sys/kmem.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
-#include <sys/mman.h>
 
 #include <uvm/uvm.h>
 #include <uvm/uvm_page.h>
@@ -49,10 +53,17 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.65 2020/07/19 06:56:09 maxv Exp $
 #include <x86/dbregs.h>
 #include <x86/cpu_counter.h>
 #include <machine/cpuvar.h>
+#endif /* __NetBSD__ */
 
-#include <dev/nvmm/nvmm.h>
-#include <dev/nvmm/nvmm_internal.h>
-#include <dev/nvmm/x86/nvmm_x86.h>
+#ifdef __DragonFly__
+#include <machine/specialreg.h>
+#include <machine/segments.h>
+#endif
+
+#include <dev/virtual/nvmm/nvmm_compat.h>
+#include <dev/virtual/nvmm/nvmm.h>
+#include <dev/virtual/nvmm/nvmm_internal.h>
+#include <dev/virtual/nvmm/x86/nvmm_x86.h>
 
 int svm_vmrun(paddr_t, uint64_t *);
 
@@ -2284,13 +2295,13 @@ svm_ident(void)
 	if (cpu_vendor != CPUVENDOR_AMD) {
 		return false;
 	}
-	if (!(cpu_feature[3] & CPUID_SVM)) {
-		printf("NVMM: SVM not supported\n");
+
+	if (x86_cpuid_max_ext() < 0x8000000a) {
+		printf("NVMM: CPUID leaf not available\n");
 		return false;
 	}
-
-	if (curcpu()->ci_max_ext_cpuid < 0x8000000a) {
-		printf("NVMM: CPUID leaf not available\n");
+	if (!(x86_cpuid_ext_ecx() & CPUID_SVM)) {
+		printf("NVMM: SVM not supported\n");
 		return false;
 	}
 	x86_cpuid(0x8000000a, descs);
